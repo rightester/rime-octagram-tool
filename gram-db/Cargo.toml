@@ -1,0 +1,8 @@
+[package]
+name = "gram-db"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+darts = { path = "../darts" }
+memmap2 = "0.9.9"

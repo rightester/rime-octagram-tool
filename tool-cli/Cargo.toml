@@ -1,0 +1,8 @@
+[package]
+name = "tool-cli"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+darts = { path = "../darts" }
+gram-db = { path = "../gram-db" }
