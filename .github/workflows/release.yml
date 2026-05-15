@@ -24,31 +24,31 @@ jobs:
           - os: windows-latest
             target: x86_64-pc-windows-msvc
             ext: .exe
-            artifact: tool-cli-windows-x86_64.exe
+            artifact: octagram-tool-windows-x86_64.exe
           - os: windows-latest
             target: aarch64-pc-windows-msvc
             ext: .exe
-            artifact: tool-cli-windows-aarch64.exe
+            artifact: octagram-tool-windows-aarch64.exe
           - os: ubuntu-latest
             target: x86_64-unknown-linux-gnu
             ext: ""
-            artifact: tool-cli-linux-x86_64
+            artifact: octagram-tool-linux-x86_64
           - os: ubuntu-latest
             target: x86_64-unknown-linux-musl
             ext: ""
-            artifact: tool-cli-linux-x86_64-musl
+            artifact: octagram-tool-linux-x86_64-musl
           - os: ubuntu-latest
             target: aarch64-unknown-linux-gnu
             ext: ""
-            artifact: tool-cli-linux-aarch64
+            artifact: octagram-tool-linux-aarch64
           - os: macos-latest
             target: x86_64-apple-darwin
             ext: ""
-            artifact: tool-cli-macos-x86_64
+            artifact: octagram-tool-macos-x86_64
           - os: macos-latest
             target: aarch64-apple-darwin
             ext: ""
-            artifact: tool-cli-macos-aarch64
+            artifact: octagram-tool-macos-aarch64
 
     steps:
       - uses: actions/checkout@v4
