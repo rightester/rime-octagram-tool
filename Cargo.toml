@@ -1,3 +1,3 @@
 [workspace]
-members = ["darts", "gram-db", "gram-cli"]
+members = ["darts", "gram-db", "tool-cli"]
 resolver = "2"
