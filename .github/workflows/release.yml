@@ -1,119 +1,187 @@
-name: Create Release
-
-permissions:
-  contents: write
+name: Release
 
 on:
   workflow_dispatch:
     inputs:
-      tag:
-        description: 'Release tag (e.g. v1.2.3)'
+      version:
+        description: 'Release version tag (e.g. 0.3.2)'
         required: true
-      name:
-        description: 'Release name (optional)'
-        required: false
-      body:
-        description: 'Release notes (optional)'
-        required: false
-      draft:
-        description: 'Create as draft (true/false)'
-        required: false
-        default: 'false'
+        type: string
       prerelease:
-        description: 'Mark as prerelease (true/false)'
+        description: 'Mark as pre-release'
         required: false
-        default: 'false'
+        default: false
+        type: boolean
 
 jobs:
-  build:
+  build-native:
+    name: Build native (${{ matrix.target }})
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
         include:
-          - os: ubuntu-latest
-            target: x86_64-unknown-linux-gnu
-          - os: ubuntu-latest
-            target: x86_64-unknown-linux-musl
-          - os: ubuntu-latest
-            target: aarch64-unknown-linux-gnu
-          - os: ubuntu-latest
-            target: aarch64-unknown-linux-musl
           - os: windows-latest
             target: x86_64-pc-windows-msvc
+            ext: .exe
+            artifact: tool-cli-windows-x86_64.exe
           - os: windows-latest
             target: aarch64-pc-windows-msvc
+            ext: .exe
+            artifact: tool-cli-windows-aarch64.exe
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            ext: ""
+            artifact: tool-cli-linux-x86_64
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-musl
+            ext: ""
+            artifact: tool-cli-linux-x86_64-musl
+          - os: ubuntu-latest
+            target: aarch64-unknown-linux-gnu
+            ext: ""
+            artifact: tool-cli-linux-aarch64
           - os: macos-latest
             target: x86_64-apple-darwin
+            ext: ""
+            artifact: tool-cli-macos-x86_64
           - os: macos-latest
             target: aarch64-apple-darwin
+            ext: ""
+            artifact: tool-cli-macos-aarch64
+
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Install Rust toolchain
-        uses: actions-rs/toolchain@v1
+      - name: Install Rust (with targets)
+        uses: dtolnay/rust-toolchain@stable
         with:
-          toolchain: stable
-          override: true
-          components: rustfmt, clippy
+          targets: ${{ matrix.target }}
 
-      - name: Add target and prepare environment (Linux/macOS)
-        if: runner.os != 'Windows'
+      - name: Install cross-compilation tools for aarch64 GNU
+        if: matrix.target == 'aarch64-unknown-linux-gnu'
         run: |
-          rustup target add ${{ matrix.target }}
-          if [[ "${{ matrix.target }}" == *"musl"* ]]; then
-            sudo apt-get update
-            sudo apt-get install -y musl-tools build-essential gcc
+          sudo apt-get update
+          sudo apt-get install -y gcc-aarch64-linux-gnu
+
+      - name: Install musl tools for x86_64 musl
+        if: matrix.target == 'x86_64-unknown-linux-musl'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y musl-tools
+
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+          key: ${{ runner.os }}-cargo-${{ matrix.target }}-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Build release
+        env:
+          CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER: aarch64-linux-gnu-gcc
+        run: cargo build --release --target ${{ matrix.target }} --bin tool-cli
+
+      - name: Copy binary
+        shell: bash
+        run: |
+          mkdir -p artifacts
+          if [ "${{ matrix.os }}" = "Windows" ] || [ "${{ matrix.ext }}" = ".exe" ]; then
+            cp "target/${{ matrix.target }}/release/tool-cli${{ matrix.ext }}" "${{ matrix.artifact }}"
+          else
+            cp "target/${{ matrix.target }}/release/tool-cli" "${{ matrix.artifact }}"
+            chmod +x "${{ matrix.artifact }}"
           fi
-        shell: bash
-
-      - name: Add target (Windows)
-        if: runner.os == 'Windows'
-        run: |
-          rustup target add ${{ matrix.target }}
-        shell: powershell
-
-      - name: Build (Unix)
-        if: runner.os != 'Windows'
-        run: |
-          cargo build --release --target ${{ matrix.target }} --bin tool-cli
-          out="target/${{ matrix.target }}/release/tool-cli"
-          mkdir -p dist
-          cp "$out" "dist/tool-cli-${{ matrix.target }}"
-          chmod +x "dist/tool-cli-${{ matrix.target }}"
-        shell: bash
-
-      - name: Build (Windows)
-        if: runner.os == 'Windows'
-        run: |
-          cargo build --release --target ${{ matrix.target }} --bin tool-cli
-          $out = "target/${{ matrix.target }}/release/tool-cli.exe"
-          New-Item -ItemType Directory -Path dist -Force | Out-Null
-          Copy-Item $out "dist/tool-cli-${{ matrix.target }}.exe"
-        shell: powershell
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: tool-cli-${{ matrix.target }}
-          path: dist/*
+          name: ${{ matrix.artifact }}
+          path: ${{ matrix.artifact }}
+          retention-days: 1
+
+  build-wasm:
+    name: Build WASM
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust (WASM targets)
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown,wasm32-wasip1
+
+      - name: Install wasm-pack
+        run: curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
+
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+          key: wasm-cargo-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Build web wasm
+        run: wasm-pack build --target web --release --out-dir pkg-web
+
+      - name: Build bundler wasm
+        run: wasm-pack build --target bundler --release --out-dir pkg-bundler
+
+      - name: Build WASI
+        run: cargo build --release --target wasm32-wasip1 --bin tool-cli
+
+      - name: Package web-web
+        run: tar czf tool-cli-web-web.tar.gz -C pkg-web .
+
+      - name: Package web-bundler
+        run: tar czf tool-cli-web-bundler.tar.gz -C pkg-bundler .
+
+      - name: Copy WASI
+        run: cp target/wasm32-wasip1/release/tool-cli.wasm tool-cli-wasi.wasm || true
+
+      - name: Upload web-web artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: tool-cli-web-web
+          path: tool-cli-web-web.tar.gz
+          retention-days: 1
+
+      - name: Upload web-bundler artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: tool-cli-web-bundler
+          path: tool-cli-web-bundler.tar.gz
+          retention-days: 1
+
+      - name: Upload WASI artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: tool-cli-wasi
+          path: tool-cli-wasi.wasm
+          retention-days: 1
 
   release:
-    needs: build
+    name: Create Release
+    needs: [build-native, build-wasm]
     runs-on: ubuntu-latest
-    steps:
-      - name: Download all build artifacts
-        uses: actions/download-artifact@v4
-        with:
-          path: dist
+    permissions:
+      contents: write
 
-      - name: Create GitHub Release and upload assets
-        uses: ncipollo/release-action@v1
+    steps:
+      - uses: actions/download-artifact@v4
         with:
-          tag: ${{ github.event.inputs.tag }}
-          name: ${{ github.event.inputs.name }}
-          body: ${{ github.event.inputs.body }}
-          draft: ${{ github.event.inputs.draft }}
+          path: artifacts
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.event.inputs.version }}
+          name: ${{ github.event.inputs.version }}
           prerelease: ${{ github.event.inputs.prerelease }}
-          files: dist/*
+          generate_release_notes: true
+          files: artifacts/**/*
