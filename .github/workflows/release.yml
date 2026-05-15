@@ -104,7 +104,7 @@ jobs:
 
   release:
     name: Create Release
-    needs: [build-native, build-wasm]
+    needs: [build-native]
     runs-on: ubuntu-latest
     permissions:
       contents: write
